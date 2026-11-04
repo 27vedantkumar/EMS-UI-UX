@@ -131,3 +131,4 @@ class EvaluationResponse(BaseModel):
 class CreditUpdateRequest(BaseModel):
     credits: int
     status: str  # awarded, reduced, not-awarded
+

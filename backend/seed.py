@@ -229,3 +229,4 @@ def seed_database():
 
     db.commit()
     db.close()
+
