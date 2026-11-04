@@ -1,14 +1,38 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import DashboardLayout from '../../components/DashboardLayout';
 import { useAuth } from '../../context/AuthContext';
-import { teams, events } from '../../data/mockData';
+import { useEMSStore } from '../../store/emsStore';
+import { api } from '../../api/client';
 import './ParticipantDashboard.css';
 
 const ParticipantDashboard = () => {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [participantData, setParticipantData] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-  const team = teams.find(t => t.id === user.teamId);
+  const { teams, events } = useEMSStore();
+
+  useEffect(() => {
+    let isMounted = true;
+    async function loadData() {
+      try {
+        if (user?.teamId || user?.id) {
+          const res = await api.getParticipantVenue(user.teamId || user.id);
+          if (isMounted) setParticipantData(res);
+        }
+      } catch (err) {
+        console.error('Could not fetch participant venue endpoint, using store fallback:', err);
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    }
+    loadData();
+    return () => { isMounted = false; };
+  }, [user]);
+
+  // Fallback to store if direct endpoint hasn't resolved
+  const team = participantData || teams.find(t => t.id === user?.teamId);
   const event = events.find(e => e.id === team?.event);
 
   return (
@@ -18,7 +42,7 @@ const ParticipantDashboard = () => {
         <div className="welcome-banner">
           <div className="welcome-text">
             <h1>Welcome back, {user?.name || 'Participant'}! 👋</h1>
-            <p>Here's your event registration summary and venue allocation details.</p>
+            <p>Here's your live event registration summary and venue allocation details from the database.</p>
           </div>
         </div>
 
@@ -36,13 +60,13 @@ const ParticipantDashboard = () => {
 
           <div className="stat-card">
             <div className="stat-icon">🏷️</div>
-            <div className="stat-value">{team?.id || '—'}</div>
+            <div className="stat-value">{team?.teamId || team?.id || '—'}</div>
             <div className="stat-label">Team ID</div>
           </div>
 
           <div className="stat-card">
             <div className="stat-icon">🎯</div>
-            <div className="stat-value">{event?.name || '—'}</div>
+            <div className="stat-value">{participantData?.eventName || event?.name || '—'}</div>
             <div className="stat-label">Event Name</div>
           </div>
         </div>
@@ -76,7 +100,7 @@ const ParticipantDashboard = () => {
             <div className="card-body">
               <div className="info-row">
                 <span className="info-label">Team Name</span>
-                <span className="info-value">{team?.name || '—'}</span>
+                <span className="info-value">{participantData?.teamName || team?.name || '—'}</span>
               </div>
               <div className="info-row">
                 <span className="info-label">Members</span>
@@ -92,7 +116,7 @@ const ParticipantDashboard = () => {
               <div className="info-row">
                 <span className="info-label">Fee Status</span>
                 <span className="info-value">
-                  {team?.feeStatus === 'paid' ? 'Paid ✅' : 'Unpaid ❌'}
+                  {team?.feePaid ? 'Paid ✅' : 'Unpaid ❌'}
                 </span>
               </div>
             </div>
@@ -106,19 +130,19 @@ const ParticipantDashboard = () => {
             <div className="card-body">
               <div className="info-row">
                 <span className="info-label">Description</span>
-                <span className="info-value">{event?.description || '—'}</span>
+                <span className="info-value">{participantData?.eventDescription || event?.description || '—'}</span>
               </div>
               <div className="info-row">
                 <span className="info-label">Location</span>
-                <span className="info-value">{event?.location || '—'}</span>
+                <span className="info-value">{participantData?.location || event?.location || '—'}</span>
               </div>
               <div className="info-row">
                 <span className="info-label">Deadline</span>
-                <span className="info-value">{event?.deadline || '—'}</span>
+                <span className="info-value">{participantData?.registrationDeadline || event?.registrationDeadline || '—'}</span>
               </div>
               <div className="info-row">
                 <span className="info-label">Fees</span>
-                <span className="info-value">{event?.fees ? `₹${event.fees}` : '—'}</span>
+                <span className="info-value">{participantData?.participationFees || event?.participationFees ? `₹${participantData?.participationFees || event?.participationFees}` : 'Free'}</span>
               </div>
             </div>
           </div>

@@ -1,22 +1,29 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import DashboardLayout from '../../components/DashboardLayout';
 import Timer from '../../components/Timer';
 import { useAuth } from '../../context/AuthContext';
-import { teams, evaluationCriteria, venues } from '../../data/mockData';
+import { useEMSStore } from '../../store/emsStore';
+import { evaluationCriteria } from '../../data/mockData';
 
 const JuryDashboard = () => {
   const { user } = useAuth();
+  const { teams, venues, evaluations, submitEvaluation, fetchEvaluations } = useEMSStore();
 
   const [activeTab, setActiveTab] = useState('dashboard');
   const [selectedRoom, setSelectedRoom] = useState(null);
   const [selectedTeam, setSelectedTeam] = useState(null);
   const [scores, setScores] = useState({});
   const [remarks, setRemarks] = useState('');
-  const [evaluations, setEvaluations] = useState([]);
   const [filterText, setFilterText] = useState('');
 
-  // Derive the jury's allocated venue (first venue or based on user assignment)
-  const allocatedVenue = venues && venues.length > 0 ? venues[0] : null;
+  useEffect(() => {
+    fetchEvaluations();
+  }, [fetchEvaluations]);
+
+  // Derive the jury's allocated venue
+  const allocatedVenue = venues && venues.length > 0 
+    ? (venues.find(v => v.block === user?.allocatedVenue) || venues[0]) 
+    : null;
   const allocatedRooms = allocatedVenue?.rooms || [];
 
   // Get teams for the selected room
@@ -59,28 +66,31 @@ const JuryDashboard = () => {
     setScores((prev) => ({ ...prev, [criterionId]: numVal }));
   }, []);
 
-  const handleSubmitEvaluation = useCallback(() => {
+  const handleSubmitEvaluation = useCallback(async () => {
     if (!selectedTeam) return;
 
     const totalScore = Object.values(scores).reduce((sum, v) => sum + v, 0);
 
-    const evaluation = {
-      id: Date.now(),
+    const evaluationPayload = {
       teamId: selectedTeam.id,
-      teamName: selectedTeam.name || selectedTeam.teamName || `Team ${selectedTeam.id}`,
+      juryId: user?.juryId || String(user?.id || ''),
+      juryName: user?.name || 'Jury Member',
+      room: selectedRoom?.name || selectedTeam.room,
       scores: { ...scores },
       totalScore,
-      remarks,
-      timestamp: new Date().toISOString(),
-      juryId: user?.id,
-      roomId: selectedRoom?.id,
+      remarks: remarks || ''
     };
 
-    setEvaluations((prev) => [...prev, evaluation]);
-    setSelectedTeam(null);
-    setScores({});
-    setRemarks('');
-  }, [selectedTeam, scores, remarks, user, selectedRoom]);
+    try {
+      await submitEvaluation(evaluationPayload);
+      setSelectedTeam(null);
+      setScores({});
+      setRemarks('');
+      setActiveTab('history');
+    } catch (err) {
+      alert('Failed to submit evaluation: ' + err.message);
+    }
+  }, [selectedTeam, scores, remarks, user, selectedRoom, submitEvaluation]);
 
   const filteredEvaluations = evaluations.filter((ev) =>
     filterText

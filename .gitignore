@@ -37,3 +37,7 @@ yarn-error.log*
 .cache/
 .temp/
 
+
+*.db
+__pycache__/
+backend/__pycache__/

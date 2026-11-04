@@ -1,14 +1,32 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import DashboardLayout from '../../components/DashboardLayout';
 import { useAuth } from '../../context/AuthContext';
-import { teams, events, venues, evaluationCriteria, resultSheetColumns } from '../../data/mockData';
+import { useEMSStore } from '../../store/emsStore';
+import { evaluationCriteria, resultSheetColumns } from '../../data/mockData';
 
 const OrganizerDashboard = () => {
   const { user } = useAuth();
+  const { events: storeEvents, venues: storeVenues, teams: storeTeams, addEvent, modifyEvent, fetchEvents, fetchVenues, fetchTeams } = useEMSStore();
 
   const [activeTab, setActiveTab] = useState('overview');
-  const [venueData, setVenueData] = useState(venues || []);
-  const [eventData, setEventData] = useState(events || []);
+  const [venueData, setVenueData] = useState([]);
+  const [eventData, setEventData] = useState([]);
+
+  useEffect(() => {
+    fetchEvents();
+    fetchVenues();
+    fetchTeams();
+  }, [fetchEvents, fetchVenues, fetchTeams]);
+
+  useEffect(() => {
+    if (storeEvents?.length) setEventData(storeEvents);
+  }, [storeEvents]);
+
+  useEffect(() => {
+    if (storeVenues?.length) setVenueData(storeVenues);
+  }, [storeVenues]);
+
+  const teams = storeTeams || [];
   const [resultSheet, setResultSheet] = useState([
     { rank: 1, teamId: 'T-001', teamName: 'CodeCrafters', venue: 'Block A - Room 101', juryName: 'Dr. Priya Mehta', totalScore: 45 },
     { rank: 2, teamId: 'T-003', teamName: 'ByteForce', venue: 'Block A - Room 102', juryName: 'Prof. Rajesh Kumar', totalScore: 42 },
@@ -104,26 +122,21 @@ const OrganizerDashboard = () => {
     });
   };
 
-  const handleSaveEvent = (eventId) => {
-    setEventData(
-      eventData.map((evt) =>
-        evt.id === eventId
-          ? {
-              ...evt,
-              maxTeams: Number(editFormData.maxTeams) || evt.maxTeams,
-              minTeams: Number(editFormData.minTeams) || evt.minTeams,
-              location: editFormData.location || evt.location,
-              venue: editFormData.location || evt.venue,
-              deadline: editFormData.deadline || evt.deadline,
-              registrationDeadline: editFormData.deadline || evt.registrationDeadline,
-              fees: Number(editFormData.fees) || evt.fees,
-              participationFees: Number(editFormData.fees) || evt.participationFees,
-            }
-          : evt
-      )
-    );
-    setEditingEvent(null);
-    setEditFormData({});
+  const handleSaveEvent = async (eventId) => {
+    try {
+      const payload = {
+        maxTeams: Number(editFormData.maxTeams) || 50,
+        minTeams: Number(editFormData.minTeams) || 5,
+        location: editFormData.location || '',
+        registrationDeadline: editFormData.deadline || '',
+        participationFees: Number(editFormData.fees) || 0,
+      };
+      await modifyEvent(eventId, payload);
+      setEditingEvent(null);
+      setEditFormData({});
+    } catch (err) {
+      alert('Failed to update event: ' + err.message);
+    }
   };
 
   const handleCancelEdit = () => {
@@ -131,24 +144,25 @@ const OrganizerDashboard = () => {
     setEditFormData({});
   };
 
-  const handleCreateEvent = () => {
+  const handleCreateEvent = async () => {
     if (!newEventData.name.trim()) return;
-    const newEvt = {
-      id: `evt-${Date.now()}`,
-      name: newEventData.name,
-      status: 'Upcoming',
-      maxTeams: Number(newEventData.maxTeams) || 10,
-      minTeams: Number(newEventData.minTeams) || 2,
-      location: newEventData.location || 'TBD',
-      venue: newEventData.location || 'TBD',
-      deadline: newEventData.deadline || 'TBD',
-      registrationDeadline: newEventData.deadline || 'TBD',
-      fees: Number(newEventData.fees) || 0,
-      participationFees: Number(newEventData.fees) || 0,
-    };
-    setEventData([...eventData, newEvt]);
-    setNewEventData({ name: '', maxTeams: '', minTeams: '', location: '', deadline: '', fees: '' });
-    setShowNewEventForm(false);
+    try {
+      const newEvtPayload = {
+        name: newEventData.name,
+        status: 'active',
+        maxTeams: Number(newEventData.maxTeams) || 50,
+        minTeams: Number(newEventData.minTeams) || 5,
+        location: newEventData.location || 'Main Auditorium',
+        registrationDeadline: newEventData.deadline || '2026-12-31',
+        participationFees: Number(newEventData.fees) || 0,
+        description: 'New event created by organizer'
+      };
+      await addEvent(newEvtPayload);
+      setNewEventData({ name: '', maxTeams: '', minTeams: '', location: '', deadline: '', fees: '' });
+      setShowNewEventForm(false);
+    } catch (err) {
+      alert('Failed to create event: ' + err.message);
+    }
   };
 
   const handleAddVenue = () => {

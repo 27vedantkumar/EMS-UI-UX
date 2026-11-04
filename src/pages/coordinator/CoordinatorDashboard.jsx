@@ -2,19 +2,13 @@ import { useState, useMemo } from 'react'
 import DashboardLayout from '../../components/DashboardLayout'
 import Timer from '../../components/Timer'
 import { useAuth } from '../../context/AuthContext'
-import { teams, venues } from '../../data/mockData'
+import { useEMSStore } from '../../store/emsStore'
 
 export default function CoordinatorDashboard() {
   const { user } = useAuth()
+  const { teams, venues, updateCredits } = useEMSStore()
 
   const [activeTab, setActiveTab] = useState('dashboard')
-  const [teamCredits, setTeamCredits] = useState(() => {
-    const initial = {}
-    teams.forEach((t) => {
-      initial[t.id] = { credits: 100, status: 'awarded' }
-    })
-    return initial
-  })
   const [timerMinutes, setTimerMinutes] = useState(10)
   const [alerts, setAlerts] = useState([])
 
@@ -29,39 +23,27 @@ export default function CoordinatorDashboard() {
   const activeEvaluations = coordinatorVenue?.rooms.filter((r) => r.juryAssigned).length || 0
 
   // ── Credit helpers ──────────────────────────────────────
-  const reduceCredits = (teamId) => {
-    setTeamCredits((prev) => ({
-      ...prev,
-      [teamId]: {
-        credits: Math.max(0, prev[teamId].credits - 10),
-        status: 'reduced',
-      },
-    }))
+  const handleReduceCredits = async (team) => {
+    const newCred = Math.max(0, (team.credits ?? 100) - 10)
+    await updateCredits(team.id, newCred, 'reduced')
   }
 
-  const notAward = (teamId) => {
-    setTeamCredits((prev) => ({
-      ...prev,
-      [teamId]: { credits: 0, status: 'not-awarded' },
-    }))
+  const handleNotAward = async (team) => {
+    await updateCredits(team.id, 0, 'not-awarded')
   }
 
-  const restoreCredits = (teamId) => {
-    setTeamCredits((prev) => ({
-      ...prev,
-      [teamId]: { credits: 100, status: 'awarded' },
-    }))
+  const handleRestoreCredits = async (team) => {
+    await updateCredits(team.id, 100, 'awarded')
   }
 
   // ── Credit summary ─────────────────────────────────────
   const creditsSummary = useMemo(() => {
-    const values = Object.values(teamCredits)
     return {
-      full: values.filter((v) => v.status === 'awarded').length,
-      reduced: values.filter((v) => v.status === 'reduced').length,
-      notAwarded: values.filter((v) => v.status === 'not-awarded').length,
+      full: teams.filter((t) => (t.creditStatus || 'awarded') === 'awarded').length,
+      reduced: teams.filter((t) => t.creditStatus === 'reduced').length,
+      notAwarded: teams.filter((t) => t.creditStatus === 'not-awarded').length,
     }
-  }, [teamCredits])
+  }, [teams])
 
   // ── Timer / Alert helpers ──────────────────────────────
   const timestamp = () =>
@@ -80,40 +62,33 @@ export default function CoordinatorDashboard() {
 
   const clearAlerts = () => setAlerts([])
 
-  // ── Badge helper ───────────────────────────────────────
   const statusBadge = (status) => {
     const map = {
-      awarded: 'badge badge-success',
-      reduced: 'badge badge-warning',
-      'not-awarded': 'badge badge-danger',
+      awarded: 'badge-success',
+      reduced: 'badge-warning',
+      'not-awarded': 'badge-danger',
     }
-    const labelMap = {
+    const label = {
       awarded: 'Awarded',
       reduced: 'Reduced',
       'not-awarded': 'Not Awarded',
     }
-    return <span className={map[status]}>{labelMap[status]}</span>
+    return <span className={`badge ${map[status] || 'badge-success'}`}>{label[status] || status}</span>
   }
 
-  // ── Render tabs ────────────────────────────────────────
+  // ── Tab Renderers ──────────────────────────────────────
   const renderDashboard = () => (
     <>
-      {/* Welcome card */}
-      <div className="info-card">
-        <div className="card-header">
-          <h2>👋 Welcome, {user?.name || 'Coordinator'}</h2>
-        </div>
-        <div className="card-body">
-          <p><strong>Coordinator ID:</strong> {user?.coordinatorId || 'C-001'}</p>
-          <p><strong>Email:</strong> {user?.email}</p>
-          <p><strong>Allocated Venue:</strong> {coordinatorVenue?.block}</p>
-        </div>
+      {/* Welcome */}
+      <div className="welcome-banner">
+        <h2>Welcome back, {user?.name || 'Coordinator'} 👋</h2>
+        <p>Allocated Venue: <strong>{user?.allocatedVenue || 'Block A'}</strong> | ID: {user?.coordinatorId || 'C-001'}</p>
       </div>
 
-      {/* Stat cards */}
+      {/* Stats */}
       <div className="cards-row">
         <div className="stat-card">
-          <span className="stat-icon">🏫</span>
+          <span className="stat-icon">🚪</span>
           <span className="stat-value">{totalRooms}</span>
           <span className="stat-label">Total Rooms</span>
         </div>
@@ -123,25 +98,25 @@ export default function CoordinatorDashboard() {
           <span className="stat-label">Total Teams</span>
         </div>
         <div className="stat-card">
-          <span className="stat-icon">📝</span>
+          <span className="stat-icon">⚖️</span>
           <span className="stat-value">{activeEvaluations}</span>
-          <span className="stat-label">Active Evaluations</span>
+          <span className="stat-label">Active Juries</span>
         </div>
       </div>
 
-      {/* Venue allocation overview */}
+      {/* Venue Overview */}
       <div className="venue-overview-card">
         <div className="card-header">
-          <h2>🏢 Venue Allocation — {coordinatorVenue?.block}</h2>
+          <h3>📍 Venue Allocation — {coordinatorVenue?.block || 'Block A'}</h3>
         </div>
         <div className="card-body">
-          <div className="cards-row">
+          <div className="room-status-grid">
             {coordinatorVenue?.rooms.map((room) => {
               const roomTeams = teamsInRoom(room.name)
               return (
                 <div className="room-status-card" key={room.id}>
-                  <div className="room-status-indicator" />
-                  <h3>{room.name}</h3>
+                  <div className={`room-status-indicator ${room.juryAssigned ? 'active' : 'idle'}`} />
+                  <h4>{room.name}</h4>
                   <p><strong>Capacity:</strong> {room.capacity}</p>
                   <p><strong>Tables:</strong> {room.tables}</p>
                   <p>
@@ -163,7 +138,7 @@ export default function CoordinatorDashboard() {
       <div className="timer-section">
         <div className="info-card">
           <div className="card-header">
-            <h2>⏱️ Timer Control</h2>
+            <h3>⏱️ Timer Control</h3>
           </div>
           <div className="card-body">
             <label style={{ marginRight: 12, fontWeight: 600 }}>
@@ -189,7 +164,7 @@ export default function CoordinatorDashboard() {
 
         <div className="info-card" style={{ marginTop: 24 }}>
           <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h2>🔔 Alerts</h2>
+            <h3>🔔 Alerts</h3>
             <div>
               <button className="btn btn-warning btn-sm" onClick={sendAlertToJury} style={{ marginRight: 8 }}>
                 Send Alert to Jury
@@ -242,7 +217,7 @@ export default function CoordinatorDashboard() {
       {/* Credits table */}
       <div className="info-card">
         <div className="card-header">
-          <h2>💰 Credit Management</h2>
+          <h3>💰 Credit Management</h3>
         </div>
         <div className="card-body">
           <table className="data-table">
@@ -257,34 +232,35 @@ export default function CoordinatorDashboard() {
             </thead>
             <tbody>
               {teams.map((team) => {
-                const tc = teamCredits[team.id]
+                const creds = team.credits ?? 100
+                const status = team.creditStatus ?? 'awarded'
                 return (
                   <tr key={team.id}>
                     <td>{team.id}</td>
                     <td>{team.name}</td>
-                    <td><strong>{tc.credits}</strong></td>
-                    <td>{statusBadge(tc.status)}</td>
+                    <td><strong>{creds}</strong></td>
+                    <td>{statusBadge(status)}</td>
                     <td>
                       <button
                         className="btn btn-warning btn-sm"
-                        onClick={() => reduceCredits(team.id)}
-                        disabled={tc.credits === 0}
+                        onClick={() => handleReduceCredits(team)}
+                        disabled={creds === 0}
                         style={{ marginRight: 6 }}
                       >
                         Reduce
                       </button>
                       <button
                         className="btn btn-danger btn-sm"
-                        onClick={() => notAward(team.id)}
-                        disabled={tc.status === 'not-awarded'}
+                        onClick={() => handleNotAward(team)}
+                        disabled={status === 'not-awarded'}
                         style={{ marginRight: 6 }}
                       >
                         Not Award
                       </button>
                       <button
                         className="btn btn-success btn-sm"
-                        onClick={() => restoreCredits(team.id)}
-                        disabled={tc.status === 'awarded' && tc.credits === 100}
+                        onClick={() => handleRestoreCredits(team)}
+                        disabled={status === 'awarded' && creds === 100}
                       >
                         Restore
                       </button>
